@@ -24,8 +24,13 @@ export default function Login({ onLogin }) {
   return (
     <div className="login-page">
       <div className="login-card">
-        <h1>SecureGuard</h1>
-        <p>Sign in to the Fraud Prevention Platform</p>
+        <div style={{ fontSize: '32px', marginBottom: '8px' }}>🛡️</div>
+        <h1 style={{ fontSize: '20px', lineHeight: '1.3', marginBottom: '8px', color: 'var(--color-text)' }}>
+          AI-Driven Fraud Detection and Prevention System
+        </h1>
+        <p style={{ color: 'var(--color-text-secondary)', fontSize: '13px' }}>
+          Real-time AI screening, risk intelligence & transaction monitoring platform
+        </p>
 
         {error && <div className="login-error">{error}</div>}
 

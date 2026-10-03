@@ -21,8 +21,12 @@ export default function Sidebar({ user, onLogout }) {
   return (
     <nav className="sidebar">
       <div className="sidebar-logo">
-        <h2>SecureGuard</h2>
-        <span>Fraud Prevention</span>
+        <h2 style={{ fontSize: '13px', lineHeight: '1.3', margin: 0, fontWeight: 700, letterSpacing: '-0.01em' }}>
+          AI-Driven Fraud Detection
+        </h2>
+        <span style={{ fontSize: '10px', color: '#6366f1', fontWeight: 600, letterSpacing: '0.04em' }}>
+          AND PREVENTION SYSTEM
+        </span>
       </div>
 
       <div className="sidebar-nav">
