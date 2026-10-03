@@ -1,0 +1,55 @@
+{
+  "model_type": "XGBClassifier",
+  "model_version": "1.0",
+  "training_date": "2026-10-03T04:51:06.759982",
+  "n_samples": 20000,
+  "n_features": 25,
+  "feature_names": [
+    "amount",
+    "log_amount",
+    "amount_zscore",
+    "hour",
+    "day_of_week",
+    "is_weekend",
+    "is_night",
+    "failed_attempts",
+    "is_new_device",
+    "is_new_ip",
+    "transaction_frequency",
+    "log_tx_freq",
+    "amount_to_avg_ratio",
+    "amount_deviation",
+    "time_since_last_transaction",
+    "log_time_since_last",
+    "merchant_frequency",
+    "device_usage_count",
+    "ip_usage_count",
+    "log_device_count",
+    "log_ip_count",
+    "behavioural_score",
+    "velocity_score",
+    "device_ip_interaction",
+    "amount_freq_interaction"
+  ],
+  "metrics": {
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1_score": 1.0,
+    "roc_auc": 1.0,
+    "pr_auc": 1.0,
+    "confusion_matrix": [
+      [
+        2850,
+        0
+      ],
+      [
+        0,
+        150
+      ]
+    ]
+  },
+  "fraud_rate": 0.05,
+  "train_size": 14008,
+  "val_size": 2992,
+  "test_size": 3000
+}

@@ -1,0 +1,21 @@
+import { NavLink } from 'react-router-dom';
+
+export default function Navbar({ user, onLogout }) {
+  return (
+    <nav className="navbar">
+      <div className="navbar-brand">SecureGuard</div>
+      <div className="navbar-actions">
+        <NavLink to="/payment" className={({ isActive }) => `navbar-link${isActive ? ' active' : ''}`}>
+          Make Payment
+        </NavLink>
+        <NavLink to="/my-transactions" className={({ isActive }) => `navbar-link${isActive ? ' active' : ''}`}>
+          My Transactions
+        </NavLink>
+        <span className="text-sm text-muted" style={{ marginLeft: 8 }}>
+          {user.full_name}
+        </span>
+        <button className="btn btn-sm btn-secondary" onClick={onLogout}>Logout</button>
+      </div>
+    </nav>
+  );
+}
