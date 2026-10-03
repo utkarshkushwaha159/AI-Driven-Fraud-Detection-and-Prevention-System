@@ -3,7 +3,7 @@
 
 A high-performance, machine-learning-powered financial fraud screening and intelligence platform with real-time risk classification, explainable AI (SHAP), behavioural transaction profiling, graph network intelligence, simulated customer checkout, and fraud analyst case management.
 
-- **Live Frontend (Vercel)**: [https://frontend-seven-olive-s1l7igj0t6.vercel.app](https://frontend-seven-olive-s1l7igj0t6.vercel.app)
+- **Live Website**: [https://ai-driven-fraud-detection-and-prevention-system.vercel.app](https://ai-driven-fraud-detection-and-prevention-system.vercel.app)
 - **GitHub Repository**: [https://github.com/utkarshkushwaha159/AI-Driven-Fraud-Detection-and-Prevention-System](https://github.com/utkarshkushwaha159/AI-Driven-Fraud-Detection-and-Prevention-System)
 
 ---
