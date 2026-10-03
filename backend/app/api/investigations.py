@@ -1,41 +1,49 @@
 """
 Investigation API routes.
+Supports duplicate prevention, analyst investigation workflow, and ready_for_admin_review state.
 """
 import uuid
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, Query
+from typing import Optional
+from fastapi import APIRouter, Depends, HTTPException, Query, Header
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
 from app.database import get_db
-from app.models.investigation import Investigation, InvestigationNote
+from app.models.investigation import Investigation, InvestigationNote, InvestigationStatus
 from app.schemas.schemas import InvestigationCreate, InvestigationUpdate, InvestigationNoteCreate
+from app.services.investigation_service import InvestigationService
+from app.services.auth_service import get_current_user_info
 
 router = APIRouter(prefix="/api/investigations", tags=["investigations"])
 
 
 @router.post("")
-def create_investigation(req: InvestigationCreate, db: Session = Depends(get_db)):
-    """Create a new investigation case."""
-    investigation = Investigation(
-        id=str(uuid.uuid4()),
-        transaction_id=req.transaction_id,
-        alert_id=req.alert_id,
-        title=req.title,
-        description=req.description,
-        priority=req.priority,
-        status="open",
+def create_investigation(
+    req: InvestigationCreate,
+    db: Session = Depends(get_db),
+    authorization: Optional[str] = Header(None),
+):
+    """Create a new investigation case, with automatic duplicate prevention."""
+    user = get_current_user_info(authorization)
+    investigation = InvestigationService.create_investigation(
+        db,
+        {
+            "transaction_id": req.transaction_id,
+            "alert_id": req.alert_id,
+            "title": req.title,
+            "description": req.description,
+            "priority": req.priority,
+            "assigned_to": user.get("user_id") if user else None,
+        }
     )
-    db.add(investigation)
-    db.commit()
-    db.refresh(investigation)
     return {
         "id": investigation.id,
         "transaction_id": investigation.transaction_id,
         "title": investigation.title,
         "status": investigation.status,
         "priority": investigation.priority,
-        "created_at": investigation.created_at.isoformat(),
+        "created_at": investigation.created_at.isoformat() if investigation.created_at else None,
     }
 
 
@@ -68,6 +76,9 @@ def list_investigations(
             "status": inv.status,
             "priority": inv.priority,
             "findings": inv.findings,
+            "final_decision": inv.final_decision,
+            "decided_by": inv.decided_by,
+            "decided_at": inv.decided_at.isoformat() if inv.decided_at else None,
             "created_at": inv.created_at.isoformat() if inv.created_at else None,
             "updated_at": inv.updated_at.isoformat() if inv.updated_at else None,
             "resolved_at": inv.resolved_at.isoformat() if inv.resolved_at else None,
@@ -76,6 +87,7 @@ def list_investigations(
                     "id": n.id,
                     "content": n.content,
                     "author_id": n.author_id,
+                    "author_name": n.author_name or "Analyst",
                     "created_at": n.created_at.isoformat() if n.created_at else None,
                 }
                 for n in inv.notes
@@ -87,7 +99,7 @@ def list_investigations(
 
 @router.get("/{investigation_id}")
 def get_investigation(investigation_id: str, db: Session = Depends(get_db)):
-    """Get investigation detail."""
+    """Get investigation detail with transaction and network context."""
     inv = db.query(Investigation).filter(Investigation.id == investigation_id).first()
     if not inv:
         raise HTTPException(status_code=404, detail="Investigation not found")
@@ -102,6 +114,9 @@ def get_investigation(investigation_id: str, db: Session = Depends(get_db)):
         "status": inv.status,
         "priority": inv.priority,
         "findings": inv.findings,
+        "final_decision": inv.final_decision,
+        "decided_by": inv.decided_by,
+        "decided_at": inv.decided_at.isoformat() if inv.decided_at else None,
         "created_at": inv.created_at.isoformat() if inv.created_at else None,
         "updated_at": inv.updated_at.isoformat() if inv.updated_at else None,
         "resolved_at": inv.resolved_at.isoformat() if inv.resolved_at else None,
@@ -110,6 +125,7 @@ def get_investigation(investigation_id: str, db: Session = Depends(get_db)):
                 "id": n.id,
                 "content": n.content,
                 "author_id": n.author_id,
+                "author_name": n.author_name or "Analyst",
                 "created_at": n.created_at.isoformat() if n.created_at else None,
             }
             for n in inv.notes
@@ -118,15 +134,22 @@ def get_investigation(investigation_id: str, db: Session = Depends(get_db)):
 
 
 @router.patch("/{investigation_id}")
-def update_investigation(investigation_id: str, req: InvestigationUpdate, db: Session = Depends(get_db)):
-    """Update investigation status/details."""
+def update_investigation(
+    investigation_id: str,
+    req: InvestigationUpdate,
+    db: Session = Depends(get_db),
+    authorization: Optional[str] = Header(None),
+):
+    """Update investigation status/details (e.g. mark 'ready_for_admin_review')."""
     inv = db.query(Investigation).filter(Investigation.id == investigation_id).first()
     if not inv:
         raise HTTPException(status_code=404, detail="Investigation not found")
 
+    user = get_current_user_info(authorization)
+
     if req.status:
         inv.status = req.status
-        if req.status in ("resolved", "false_positive"):
+        if req.status in ("resolved", "closed", "false_positive"):
             inv.resolved_at = datetime.utcnow()
     if req.priority:
         inv.priority = req.priority
@@ -142,22 +165,32 @@ def update_investigation(investigation_id: str, req: InvestigationUpdate, db: Se
 
 
 @router.post("/{investigation_id}/notes")
-def add_note(investigation_id: str, req: InvestigationNoteCreate, db: Session = Depends(get_db)):
-    """Add a note to an investigation."""
+def add_note(
+    investigation_id: str,
+    req: InvestigationNoteCreate,
+    db: Session = Depends(get_db),
+    authorization: Optional[str] = Header(None),
+):
+    """Add an analyst note to an investigation."""
     inv = db.query(Investigation).filter(Investigation.id == investigation_id).first()
     if not inv:
         raise HTTPException(status_code=404, detail="Investigation not found")
 
-    note = InvestigationNote(
-        id=str(uuid.uuid4()),
+    user = get_current_user_info(authorization)
+    author_id = user.get("user_id") if user else None
+    author_name = user.get("full_name") or user.get("username") if user else "Fraud Analyst"
+
+    note = InvestigationService.add_note(
+        db,
         investigation_id=investigation_id,
         content=req.content,
+        user_id=author_id,
+        author_name=author_name,
     )
-    db.add(note)
-    db.commit()
 
     return {
         "id": note.id,
         "content": note.content,
+        "author_name": note.author_name,
         "created_at": note.created_at.isoformat() if note.created_at else None,
     }

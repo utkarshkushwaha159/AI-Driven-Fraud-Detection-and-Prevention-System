@@ -1,6 +1,6 @@
 """
 Investigation and case management service.
-Handles investigation lifecycles, analyst notes, and status transitions.
+Handles investigation lifecycles, analyst notes, duplicate prevention, and status transitions.
 """
 import uuid
 from datetime import datetime
@@ -15,16 +15,23 @@ class InvestigationService:
 
     @staticmethod
     def create_investigation(db: Session, data: dict) -> Investigation:
-        """Create a new fraud investigation case."""
+        """Create a new fraud investigation case, preventing duplicates for the same transaction."""
+        tx_id = data.get("transaction_id")
+        if tx_id:
+            existing = db.query(Investigation).filter(Investigation.transaction_id == tx_id).first()
+            if existing:
+                return existing
+
         investigation = Investigation(
             id=str(uuid.uuid4()),
-            transaction_id=data.get("transaction_id"),
+            transaction_id=tx_id,
             alert_id=data.get("alert_id"),
             title=data.get("title", "Fraud Investigation"),
             description=data.get("description", ""),
             priority=data.get("priority", "medium"),
-            status=InvestigationStatus.OPEN.value,
+            status=data.get("status", InvestigationStatus.OPEN.value),
             assigned_to=data.get("assigned_to"),
+            findings=data.get("findings", ""),
         )
         db.add(investigation)
         db.commit()
@@ -60,21 +67,26 @@ class InvestigationService:
 
     @staticmethod
     def update_investigation(db: Session, investigation_id: str, updates: dict) -> Investigation:
-        """Update status, assignment, or notes of an investigation."""
+        """Update status, assignment, findings, or notes of an investigation."""
         inv = db.query(Investigation).filter(Investigation.id == investigation_id).first()
         if not inv:
             return None
 
         if "status" in updates and updates["status"]:
             inv.status = updates["status"]
-            if updates["status"] in ("resolved", "false_positive"):
+            if updates["status"] in ("resolved", "closed", "false_positive"):
                 inv.resolved_at = datetime.utcnow()
         if "priority" in updates and updates["priority"]:
             inv.priority = updates["priority"]
         if "assigned_to" in updates:
             inv.assigned_to = updates["assigned_to"]
-        if "resolution_notes" in updates:
-            inv.resolution_notes = updates["resolution_notes"]
+        if "findings" in updates:
+            inv.findings = updates["findings"]
+        if "final_decision" in updates:
+            inv.final_decision = updates["final_decision"]
+        if "decided_by" in updates:
+            inv.decided_by = updates["decided_by"]
+            inv.decided_at = datetime.utcnow()
 
         inv.updated_at = datetime.utcnow()
         db.commit()
@@ -82,12 +94,13 @@ class InvestigationService:
         return inv
 
     @staticmethod
-    def add_note(db: Session, investigation_id: str, content: str, user_id: str = None) -> InvestigationNote:
+    def add_note(db: Session, investigation_id: str, content: str, user_id: str = None, author_name: str = None) -> InvestigationNote:
         """Add an analyst note to an investigation."""
         note = InvestigationNote(
             id=str(uuid.uuid4()),
             investigation_id=investigation_id,
             author_id=user_id,
+            author_name=author_name or "Fraud Analyst",
             content=content,
         )
         db.add(note)

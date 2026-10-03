@@ -57,6 +57,30 @@ export const checkPayment = (data) =>
     () => liveEngine.checkPayment(data)
   );
 
+export const verifyPayment = (transactionId, verificationCode) =>
+  safeApiCall(
+    () => api.post('/payments/verify', { transaction_id: transactionId, verification_code: verificationCode }),
+    () => liveEngine.verifyPayment(transactionId, verificationCode)
+  );
+
+export const adminApprovePayment = (transactionId) =>
+  safeApiCall(
+    () => api.post(`/admin/transactions/${transactionId}/approve`),
+    () => liveEngine.adminApprove(transactionId)
+  );
+
+export const adminRejectPayment = (transactionId) =>
+  safeApiCall(
+    () => api.post(`/admin/transactions/${transactionId}/reject`),
+    () => liveEngine.adminReject(transactionId)
+  );
+
+export const getAuditLogs = (params) =>
+  safeApiCall(
+    () => api.get('/admin/audit-logs', { params }),
+    () => liveEngine.getAuditLogs(params)
+  );
+
 // Transactions
 export const getTransactions = (params) =>
   safeApiCall(

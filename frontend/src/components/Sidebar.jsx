@@ -18,6 +18,40 @@ const navItems = [
 export default function Sidebar({ user, onLogout }) {
   const location = useLocation();
 
+  const navSections = [
+    {
+      section: 'Overview',
+      items: [
+        { to: '/dashboard', label: 'Dashboard', icon: '📊' },
+      ],
+    },
+    {
+      section: 'Monitoring',
+      items: [
+        { to: '/transactions', label: 'Transactions', icon: '💳' },
+        { to: '/alerts', label: 'Alerts', icon: '🔔' },
+        { to: '/investigations', label: 'Investigations', icon: '🔍' },
+      ],
+    },
+    {
+      section: 'Analysis',
+      items: [
+        { to: '/network', label: 'Network', icon: '🕸️' },
+        { to: '/reports', label: 'Reports', icon: '📈' },
+      ],
+    },
+    ...(user?.role === 'admin'
+      ? [
+          {
+            section: 'Administration',
+            items: [
+              { to: '/admin-panel', label: 'Admin & Audit', icon: '🛡️' },
+            ],
+          },
+        ]
+      : []),
+  ];
+
   return (
     <nav className="sidebar">
       <div className="sidebar-logo">
@@ -30,7 +64,7 @@ export default function Sidebar({ user, onLogout }) {
       </div>
 
       <div className="sidebar-nav">
-        {navItems.map((section) => (
+        {navSections.map((section) => (
           <div key={section.section} className="sidebar-section">
             <div className="sidebar-section-label">{section.section}</div>
             {section.items.map((item) => (

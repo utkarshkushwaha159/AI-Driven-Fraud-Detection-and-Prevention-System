@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import init_db
-from app.api import auth, transactions, dashboard, alerts, investigations, network, ml
+from app.api import auth, transactions, dashboard, alerts, investigations, network, ml, admin
 
 app = FastAPI(
     title="Fraud Detection System",
@@ -31,6 +31,7 @@ app.include_router(alerts.router)
 app.include_router(investigations.router)
 app.include_router(network.router)
 app.include_router(ml.router)
+app.include_router(admin.router)
 
 
 @app.on_event("startup")

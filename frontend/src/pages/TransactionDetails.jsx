@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { getTransaction, getTransactionNetwork, createInvestigation } from '../services/api';
+import { getTransaction, getTransactionNetwork, createInvestigation, adminApprovePayment, adminRejectPayment } from '../services/api';
 import { StatusBadge, RiskBadge, ProbabilityBar, LoadingState } from '../components/SharedComponents';
 
-export default function TransactionDetails() {
+export default function TransactionDetails({ user }) {
   const { id } = useParams();
   const navigate = useNavigate();
   const [tx, setTx] = useState(null);
@@ -11,6 +11,7 @@ export default function TransactionDetails() {
   const [showCreateInv, setShowCreateInv] = useState(false);
   const [invTitle, setInvTitle] = useState('');
   const [invDesc, setInvDesc] = useState('');
+  const [actionMsg, setActionMsg] = useState(null);
 
   useEffect(() => { loadTx(); }, [id]);
 
@@ -21,6 +22,26 @@ export default function TransactionDetails() {
       setTx(res.data);
     } catch { }
     setLoading(false);
+  };
+
+  const handleAdminApprove = async () => {
+    try {
+      await adminApprovePayment(id);
+      setActionMsg('✓ Transaction approved by Administrator.');
+      loadTx();
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Failed to approve transaction.');
+    }
+  };
+
+  const handleAdminReject = async () => {
+    try {
+      await adminRejectPayment(id);
+      setActionMsg('✓ Transaction rejected and blocked by Administrator.');
+      loadTx();
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Failed to reject transaction.');
+    }
   };
 
   const handleCreateInvestigation = async () => {
@@ -119,6 +140,36 @@ export default function TransactionDetails() {
               <div className="detail-item-value">₹{tx.account_average_amount?.toFixed(2) || '—'}</div>
             </div>
           </div>
+
+          {actionMsg && (
+            <div style={{ marginTop: 14, padding: 10, background: 'var(--color-success-bg)', color: 'var(--color-success)', borderRadius: 4, fontSize: 13, fontWeight: 500 }}>
+              {actionMsg}
+            </div>
+          )}
+
+          {user?.role === 'admin' && tx.status === 'held' && (
+            <div style={{ marginTop: 16, padding: 14, borderRadius: 6, background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+              <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8, color: 'var(--color-navy)' }}>
+                🛡️ Admin Decision (Held Transaction)
+              </div>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button
+                  className="btn btn-sm"
+                  style={{ background: '#10b981', color: '#fff', border: 'none', flex: 1, padding: '8px 12px', fontWeight: 600 }}
+                  onClick={handleAdminApprove}
+                >
+                  Approve Transaction
+                </button>
+                <button
+                  className="btn btn-sm btn-danger"
+                  style={{ flex: 1, padding: '8px 12px', fontWeight: 600 }}
+                  onClick={handleAdminReject}
+                >
+                  Reject & Block
+                </button>
+              </div>
+            </div>
+          )}
 
           <div style={{ marginTop: 16, display: 'flex', gap: 8 }}>
             <button className="btn btn-sm btn-secondary" onClick={() => navigate(`/network?tx=${id}`)}>

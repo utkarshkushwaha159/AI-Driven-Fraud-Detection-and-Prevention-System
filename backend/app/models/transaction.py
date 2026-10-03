@@ -12,6 +12,7 @@ class TransactionStatus(str, enum.Enum):
     SUSPICIOUS = "suspicious"
     HELD = "held"
     BLOCKED = "blocked"
+    REJECTED = "rejected"
     VERIFIED = "verified"
 
 
@@ -28,6 +29,19 @@ class Transaction(Base):
     currency = Column(String, default="INR")
     description = Column(String, nullable=True)
     status = Column(String, default=TransactionStatus.PENDING.value)
+    risk_level = Column(String, default="safe")
+    customer_status_message = Column(String, nullable=True)
+
+    # Verification workflow fields (Server-side security)
+    verification_code = Column(String, nullable=True)
+    verification_attempts = Column(Integer, default=0)
+    verification_code_expires_at = Column(DateTime, nullable=True)
+
+    # Admin decision workflow fields
+    requires_admin_review = Column(Integer, default=0)
+    admin_decision = Column(String, nullable=True)
+    admin_decision_by = Column(String, nullable=True)
+    admin_decision_at = Column(DateTime, nullable=True)
 
     # Behavioural features stored at transaction time
     failed_attempts = Column(Integer, default=0)
@@ -49,3 +63,4 @@ class Transaction(Base):
     merchant = relationship("Merchant", back_populates="transactions")
     prediction = relationship("ModelPrediction", back_populates="transaction", uselist=False)
     alerts = relationship("FraudAlert", back_populates="transaction")
+    investigation = relationship("Investigation", back_populates="transaction", uselist=False)

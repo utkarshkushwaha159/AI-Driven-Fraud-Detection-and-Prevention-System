@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { checkPayment } from '../services/api';
+import { checkPayment, verifyPayment } from '../services/api';
 
 export default function CustomerPayment({ user }) {
   const [formData, setFormData] = useState({
@@ -20,6 +20,9 @@ export default function CustomerPayment({ user }) {
   const [otpStep, setOtpStep] = useState(false);
   const [otpCode, setOtpCode] = useState('');
   const [otpSuccess, setOtpSuccess] = useState(false);
+  const [verificationLoading, setVerificationLoading] = useState(false);
+  const [verificationError, setVerificationError] = useState(null);
+  const [attemptsRemaining, setAttemptsRemaining] = useState(2);
 
   const merchants = [
     { code: 'AMZN_US', name: 'Amazon US - Marketplace' },
@@ -72,6 +75,9 @@ export default function CustomerPayment({ user }) {
     setError(null);
     setOtpStep(false);
     setOtpSuccess(false);
+    setVerificationError(null);
+    setAttemptsRemaining(2);
+    setOtpCode('');
   };
 
   const handleSubmit = async (e) => {
@@ -81,6 +87,9 @@ export default function CustomerPayment({ user }) {
     setResult(null);
     setOtpStep(false);
     setOtpSuccess(false);
+    setVerificationError(null);
+    setAttemptsRemaining(2);
+    setOtpCode('');
 
     try {
       const payload = {
@@ -97,8 +106,9 @@ export default function CustomerPayment({ user }) {
 
       const res = await checkPayment(payload);
       setResult(res.data);
-      if (res.data.status === 'suspicious') {
+      if (res.data.requires_verification || res.data.risk_level === 'suspicious') {
         setOtpStep(true);
+        setAttemptsRemaining(res.data.attempts_remaining || 2);
       }
     } catch (err) {
       setError(
@@ -110,13 +120,54 @@ export default function CustomerPayment({ user }) {
     }
   };
 
-  const handleVerifyOtp = (e) => {
+  const handleVerifyOtp = async (e) => {
     e.preventDefault();
-    if (otpCode.length === 6) {
-      setOtpSuccess(true);
-      setOtpStep(false);
-    } else {
-      alert('Please enter a valid 6-digit verification code (e.g. 123456)');
+    if (!otpCode || otpCode.trim().length !== 6) {
+      setVerificationError('Please enter a valid 6-digit verification code.');
+      return;
+    }
+    setVerificationLoading(true);
+    setVerificationError(null);
+
+    try {
+      const res = await verifyPayment(result.transaction_id, otpCode.trim());
+      const data = res.data;
+      if (data.verified) {
+        setOtpSuccess(true);
+        setOtpStep(false);
+        setResult((prev) => ({
+          ...prev,
+          status: 'approved',
+          message: data.message || 'Verification successful. Your payment has been approved.',
+        }));
+      } else {
+        const remaining = data.attempts_remaining !== undefined ? data.attempts_remaining : 0;
+        setAttemptsRemaining(remaining);
+        if (remaining <= 0 || data.status === 'blocked') {
+          setOtpStep(false);
+          setResult((prev) => ({
+            ...prev,
+            status: 'blocked',
+            message: data.message || 'Verification failed. Your payment has been blocked and sent for security review.',
+          }));
+          setVerificationError(data.message || 'Verification failed. Your payment has been blocked and sent for security review.');
+        } else {
+          setVerificationError(data.message || 'Incorrect verification code. Exactly 1 final attempt remaining.');
+        }
+      }
+    } catch (err) {
+      const detail = err.response?.data?.detail || 'Verification request failed.';
+      setVerificationError(detail);
+      if (detail.includes('Maximum verification attempts') || detail.includes('blocked')) {
+        setOtpStep(false);
+        setResult((prev) => ({
+          ...prev,
+          status: 'blocked',
+          message: 'Verification failed. Your payment has been blocked and sent for security review.',
+        }));
+      }
+    } finally {
+      setVerificationLoading(false);
     }
   };
 
@@ -293,14 +344,15 @@ export default function CustomerPayment({ user }) {
                   color:
                     result.status === 'approved'
                       ? 'var(--color-success)'
-                      : result.status === 'suspicious'
+                      : result.status === 'held' && result.requires_verification
                       ? 'var(--color-warning)'
                       : 'var(--color-danger)',
                 }}
               >
                 {result.status === 'approved' && 'Payment Approved'}
-                {result.status === 'suspicious' && 'Additional Verification Required'}
-                {result.status === 'held' && 'Transaction Held for Security Review'}
+                {result.status === 'held' && result.requires_verification && 'Verification Required'}
+                {result.status === 'held' && !result.requires_verification && 'Under Security Review'}
+                {result.status === 'blocked' && 'Payment Blocked'}
               </h2>
               <p style={{ marginTop: 6, fontSize: 14, color: 'var(--color-text)' }}>
                 {result.message}
@@ -340,19 +392,50 @@ export default function CustomerPayment({ user }) {
             <div
               style={{
                 marginTop: 20,
-                padding: 16,
+                padding: 18,
                 background: '#fff',
                 borderRadius: 'var(--radius-md)',
                 border: '1px solid var(--color-border)',
               }}
             >
-              <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 8 }}>
-                Simulate Two-Factor Authentication (OTP)
-              </h3>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <h3 style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>
+                  Enter Verification Code
+                </h3>
+                <span
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 600,
+                    padding: '3px 8px',
+                    borderRadius: 4,
+                    background: attemptsRemaining === 1 ? 'var(--color-danger-bg)' : 'var(--color-neutral-bg, #f0f4f8)',
+                    color: attemptsRemaining === 1 ? 'var(--color-danger)' : 'var(--color-text)',
+                  }}
+                >
+                  Attempt {3 - attemptsRemaining} of 2 ({attemptsRemaining} remaining)
+                </span>
+              </div>
               <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginBottom: 12 }}>
-                Enter verification code sent to registered mobile/email (use <code>123456</code> to simulate approval):
+                A 6-digit one-time authorization code has been dispatched. Verification code expires in 5 minutes (Demo passcode: <code>123456</code>).
               </p>
-              <form onSubmit={handleVerifyOtp} style={{ display: 'flex', gap: 10, maxWidth: 300 }}>
+
+              {verificationError && (
+                <div
+                  style={{
+                    padding: '8px 12px',
+                    marginBottom: 12,
+                    borderRadius: 'var(--radius-sm, 4px)',
+                    background: 'var(--color-danger-bg)',
+                    color: 'var(--color-danger)',
+                    fontSize: 13,
+                    fontWeight: 500,
+                  }}
+                >
+                  {verificationError}
+                </div>
+              )}
+
+              <form onSubmit={handleVerifyOtp} style={{ display: 'flex', gap: 10, maxWidth: 340 }}>
                 <input
                   type="text"
                   maxLength={6}
@@ -360,10 +443,17 @@ export default function CustomerPayment({ user }) {
                   className="form-control"
                   value={otpCode}
                   onChange={(e) => setOtpCode(e.target.value)}
-                  style={{ textAlign: 'center', letterSpacing: 4, fontWeight: 600 }}
+                  disabled={verificationLoading}
+                  style={{ textAlign: 'center', letterSpacing: 4, fontWeight: 600, fontSize: 16 }}
+                  autoFocus
                 />
-                <button type="submit" className="btn btn-primary">
-                  Verify
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={verificationLoading}
+                  style={{ whiteSpace: 'nowrap' }}
+                >
+                  {verificationLoading ? 'Verifying...' : 'Verify Code'}
                 </button>
               </form>
             </div>

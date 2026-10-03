@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from datetime import datetime
 
 
@@ -50,6 +50,28 @@ class PaymentResponse(BaseModel):
     message: str
     amount: float
     requires_verification: bool = False
+    customer_status_message: Optional[str] = None
+    verification_attempts: Optional[int] = 0
+    attempts_remaining: Optional[int] = 2
+
+
+class PaymentVerificationRequest(BaseModel):
+    transaction_id: str
+    verification_code: str
+
+
+class PaymentVerificationResponse(BaseModel):
+    transaction_id: str
+    status: str
+    message: str
+    attempts_remaining: int
+    verified: bool
+    customer_status_message: Optional[str] = None
+
+
+class AdminDecisionRequest(BaseModel):
+    decision: str  # "approve" or "reject"
+    reason: Optional[str] = ""
 
 
 # --- Transaction ---
@@ -67,6 +89,10 @@ class TransactionOut(BaseModel):
     fraud_probability: Optional[float] = None
     anomaly_score: Optional[float] = None
     risk_level: Optional[str] = None
+    customer_status_message: Optional[str] = None
+    verification_attempts: Optional[int] = 0
+    requires_admin_review: Optional[int] = 0
+    admin_decision: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -95,6 +121,8 @@ class TransactionDetailOut(TransactionOut):
     merchant_code: Optional[str] = None
     explanation: Optional[dict] = None
     network_risk_score: Optional[float] = None
+    investigation_id: Optional[str] = None
+    investigation_status: Optional[str] = None
 
 
 # --- Dashboard ---
@@ -172,6 +200,7 @@ class InvestigationNoteOut(BaseModel):
     id: str
     content: str
     author_id: Optional[str]
+    author_name: Optional[str] = None
     created_at: datetime
 
     class Config:
@@ -188,10 +217,30 @@ class InvestigationOut(BaseModel):
     status: str
     priority: str
     findings: Optional[str]
+    final_decision: Optional[str] = None
+    decided_by: Optional[str] = None
+    decided_at: Optional[datetime] = None
     created_at: datetime
     updated_at: Optional[datetime]
     resolved_at: Optional[datetime]
     notes: List[InvestigationNoteOut] = []
+
+    class Config:
+        from_attributes = True
+
+
+# --- Audit Logs ---
+class AuditLogOut(BaseModel):
+    id: str
+    actor: str
+    role: str
+    action: str
+    target_type: str
+    target_id: Optional[str]
+    previous_status: Optional[str]
+    new_status: Optional[str]
+    details: Optional[str]
+    created_at: datetime
 
     class Config:
         from_attributes = True

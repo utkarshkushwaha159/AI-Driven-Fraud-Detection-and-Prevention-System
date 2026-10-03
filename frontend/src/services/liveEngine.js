@@ -429,16 +429,19 @@ class LiveEngine {
     let status = 'approved';
     let riskLevel = 'safe';
     let requiresVerification = false;
+    let attemptsRemaining = 0;
     let message = 'Transaction approved by real-time ML risk screening.';
 
     if (riskScore >= 0.70) {
       status = 'held';
       riskLevel = 'high_risk';
-      message = 'Transaction held for fraud analyst review due to critical anomaly.';
+      requiresVerification = false;
+      message = 'Your payment is temporarily held for security review.';
     } else if (riskScore >= 0.35) {
-      status = 'suspicious';
+      status = 'held';
       riskLevel = 'suspicious';
       requiresVerification = true;
+      attemptsRemaining = 2;
       message = 'Suspicious velocity and risk indicators. Step-up OTP verification required.';
     }
 
@@ -453,6 +456,10 @@ class LiveEngine {
       risk_level: riskLevel,
       fraud_probability: riskScore,
       anomaly_score: riskScore > 0.5 ? 0.75 : -0.7,
+      verification_attempts: 0,
+      verification_code: requiresVerification ? '123456' : null,
+      requires_admin_review: riskLevel === 'high_risk' ? 1 : 0,
+      customer_status_message: message,
       device_id: 'dev-sim-1',
       ip_id: 'ip-sim-1',
       merchant_id: 'mch-1',
@@ -483,21 +490,36 @@ class LiveEngine {
     // Prepend to database
     this.data.transactions.unshift(newTx);
 
-    // If held or suspicious, create alert
-    if (riskLevel === 'high_risk' || riskLevel === 'suspicious') {
+    // If high-risk, automatically create alert AND linked investigation
+    if (riskLevel === 'high_risk') {
       const alertId = `alt_${Date.now()}`;
       this.data.alerts.unshift({
         id: alertId,
         transaction_id: txId,
         fraud_probability: riskScore,
         anomaly_score: newTx.anomaly_score,
-        severity: riskLevel === 'high_risk' ? 'critical' : 'medium',
+        severity: 'critical',
         status: 'new',
-        description: `${riskLevel === 'high_risk' ? 'Critical alert' : 'Suspicious activity'}: ₹${amount.toLocaleString()} payment at ${merchantCode} flagged with ${(riskScore * 100).toFixed(0)}% risk probability.`,
+        description: `Critical AI fraud alert: ₹${amount.toLocaleString()} payment at ${merchantCode} flagged with ${(riskScore * 100).toFixed(0)}% risk probability.`,
         transaction_amount: amount,
         account_id: payload.account_id || 'ACC-1001',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+      });
+
+      this.data.investigations.unshift({
+        id: `inv_${Date.now()}`,
+        transaction_id: txId,
+        alert_id: alertId,
+        title: `High Risk Transaction - ${payload.account_id || 'ACC-1001'} (₹${amount.toLocaleString()})`,
+        description: `Automated ML screening flagged high-risk transaction ${txId} (${(riskScore * 100).toFixed(0)}% fraud probability).`,
+        status: 'open',
+        priority: 'critical',
+        assigned_to: 'Unassigned',
+        findings: 'Flagged for high transaction amount, proxy IP, or darknet entity connection.',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        notes: [],
       });
     }
 
@@ -511,10 +533,148 @@ class LiveEngine {
       message: message,
       amount: amount,
       requires_verification: requiresVerification,
+      attempts_remaining: attemptsRemaining,
       reasons: reasons,
       features: features,
       shap_values: features,
     };
+  }
+
+  // --- Verification ---
+  verifyPayment(transactionId, verificationCode) {
+    const tx = this.data.transactions.find((t) => t.id === transactionId);
+    if (!tx) {
+      const err = new Error('Transaction not found');
+      err.response = { data: { detail: 'Transaction not found' } };
+      throw err;
+    }
+    if (tx.status === 'approved') {
+      const err = new Error('Transaction is already approved.');
+      err.response = { data: { detail: 'Transaction is already approved.' } };
+      throw err;
+    }
+    if ((tx.verification_attempts || 0) >= 2) {
+      const err = new Error('Maximum verification attempts exceeded.');
+      err.response = { data: { detail: 'Maximum verification attempts exceeded. Payment is permanently blocked.' } };
+      throw err;
+    }
+
+    tx.verification_attempts = (tx.verification_attempts || 0) + 1;
+
+    if (verificationCode === '123456') {
+      tx.status = 'approved';
+      tx.risk_level = 'safe';
+      tx.customer_status_message = 'Payment verified and approved.';
+      this.saveDatabase();
+      return {
+        verified: true,
+        status: 'approved',
+        attempts_remaining: 2 - tx.verification_attempts,
+        message: 'Verification successful. Payment approved.',
+      };
+    } else {
+      if (tx.verification_attempts >= 2) {
+        tx.status = 'blocked';
+        tx.customer_status_message = 'Verification failed. Your payment has been blocked and sent for security review.';
+
+        const alertId = `alt_${Date.now()}`;
+        this.data.alerts.unshift({
+          id: alertId,
+          transaction_id: tx.id,
+          fraud_probability: Math.max(tx.fraud_probability || 0.6, 0.85),
+          anomaly_score: 0.88,
+          severity: 'critical',
+          status: 'new',
+          description: `Two failed verification attempts on suspicious payment ₹${tx.amount.toLocaleString()}. Transaction permanently blocked.`,
+          transaction_amount: tx.amount,
+          account_id: tx.account_id,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+
+        this.data.investigations.unshift({
+          id: `inv_${Date.now()}`,
+          transaction_id: tx.id,
+          alert_id: alertId,
+          title: `Failed Verification Challenge - ${tx.account_id}`,
+          description: `Transaction ${tx.id} for ₹${tx.amount.toLocaleString()} blocked after 2 consecutive failed verification attempts.`,
+          status: 'open',
+          priority: 'critical',
+          assigned_to: 'Unassigned',
+          findings: 'Customer or malicious actor failed both OTP verification attempts.',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          notes: [],
+        });
+
+        this.saveDatabase();
+        return {
+          verified: false,
+          status: 'blocked',
+          attempts_remaining: 0,
+          message: 'Verification failed. Your payment has been blocked and sent for security review.',
+        };
+      } else {
+        this.saveDatabase();
+        return {
+          verified: false,
+          status: 'held',
+          attempts_remaining: 1,
+          message: 'Incorrect verification code. Exactly 1 final attempt remaining.',
+        };
+      }
+    }
+  }
+
+  // --- Admin Decision ---
+  adminApprove(transactionId) {
+    const tx = this.data.transactions.find((t) => t.id === transactionId);
+    if (!tx) {
+      const err = new Error('Transaction not found');
+      err.response = { data: { detail: 'Transaction not found' } };
+      throw err;
+    }
+    tx.status = 'approved';
+    tx.admin_decision = 'approved';
+    tx.customer_status_message = 'Payment approved after security review.';
+
+    const inv = this.data.investigations.find((i) => i.transaction_id === transactionId);
+    if (inv) {
+      inv.status = 'resolved';
+      inv.final_decision = 'approved';
+      inv.updated_at = new Date().toISOString();
+    }
+    this.saveDatabase();
+    return { status: 'approved', message: 'Transaction approved by administrator.' };
+  }
+
+  adminReject(transactionId) {
+    const tx = this.data.transactions.find((t) => t.id === transactionId);
+    if (!tx) {
+      const err = new Error('Transaction not found');
+      err.response = { data: { detail: 'Transaction not found' } };
+      throw err;
+    }
+    tx.status = 'blocked';
+    tx.admin_decision = 'rejected';
+    tx.customer_status_message = 'Payment rejected and blocked by administrator.';
+
+    const inv = this.data.investigations.find((i) => i.transaction_id === transactionId);
+    if (inv) {
+      inv.status = 'closed';
+      inv.final_decision = 'rejected';
+      inv.updated_at = new Date().toISOString();
+    }
+    this.saveDatabase();
+    return { status: 'blocked', message: 'Transaction rejected and blocked by administrator.' };
+  }
+
+  getAuditLogs() {
+    return [
+      { id: 'aud-1', actor: 'system_ml', role: 'system', action: 'ml_screening_completed', target_type: 'transaction', target_id: 'tx_seed_1', previous_status: 'analyzing', new_status: 'approved', details: 'Automated ML inference score: 0.02', created_at: new Date(Date.now() - 3600000).toISOString() },
+      { id: 'aud-2', actor: 'customer', role: 'customer', action: 'verification_attempt', target_type: 'transaction', target_id: 'tx_seed_2', previous_status: 'held', new_status: 'approved', details: 'OTP code verified on attempt 1', created_at: new Date(Date.now() - 1800000).toISOString() },
+      { id: 'aud-3', actor: 'admin', role: 'admin', action: 'admin_approve', target_type: 'transaction', target_id: 'tx_seed_3', previous_status: 'held', new_status: 'approved', details: 'Admin manual approval following analyst recommendation', created_at: new Date(Date.now() - 600000).toISOString() },
+    ];
   }
 
   // --- Transactions ---

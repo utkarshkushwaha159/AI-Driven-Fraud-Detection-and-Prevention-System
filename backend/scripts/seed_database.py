@@ -19,6 +19,7 @@ from app.models.merchant import Merchant
 from app.models.fraud_alert import FraudAlert, AlertSeverity, AlertStatus
 from app.models.investigation import Investigation, InvestigationNote
 from app.models.model_prediction import ModelPrediction
+from app.models.audit_log import AuditLog
 from app.services.auth_service import hash_password
 
 import json
@@ -353,8 +354,36 @@ def seed_database():
 
             investigations_list.append(inv)
 
+        # ============ AUDIT LOGS ============
+        actions = [
+            ("customer1", "customer", "payment_initiated", "transaction", "ACC-1001", None, "approved", "Routine checkout processed"),
+            ("customer2", "customer", "payment_initiated", "transaction", "ACC-1002", None, "held", "Suspicious velocity triggered verification challenge"),
+            ("customer2", "customer", "verification_attempt_failed", "transaction", "ACC-1002", "held", "held", "Incorrect verification code on attempt 1 of 2"),
+            ("customer2", "customer", "verification_success", "transaction", "ACC-1002", "held", "approved", "Successful verification on attempt 2 of 2"),
+            ("customer3", "customer", "payment_initiated", "transaction", "ACC-1003", None, "held", "High-risk transfer held for review"),
+            ("analyst", "analyst", "investigation_note_added", "investigation", "inv-001", "open", "under_review", "Analyst reviewed graph linkages"),
+            ("analyst", "analyst", "status_updated", "investigation", "inv-001", "under_review", "ready_for_admin_review", "Flagged ready for admin review"),
+            ("admin", "admin", "admin_approve", "transaction", "ACC-1003", "held", "approved", "Admin released held transaction after documentation verification"),
+            ("admin", "admin", "model_retrain_triggered", "model", "v2.1", "active", "active", "Scheduled XGBoost production retrain executed"),
+        ]
+        for actor, role, action, target_type, target_id, prev_s, new_s, details in actions:
+            audit = AuditLog(
+                id=str(uuid.uuid4()),
+                actor=actor,
+                role=role,
+                action=action,
+                target_type=target_type,
+                target_id=target_id,
+                previous_status=prev_s,
+                new_status=new_s,
+                details=details,
+                created_at=datetime.utcnow() - timedelta(hours=random.randint(1, 48)),
+            )
+            db.add(audit)
+
         db.commit()
         print(f"  Created {len(investigations_list)} investigations")
+        print(f"  Created {len(actions)} audit trail events")
 
         print("\nDatabase seeded successfully!")
         print("\nDemo credentials:")

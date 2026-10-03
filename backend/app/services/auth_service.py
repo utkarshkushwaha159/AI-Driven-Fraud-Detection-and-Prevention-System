@@ -1,11 +1,11 @@
 """
-Authentication service with simple JWT-like token management.
+Authentication service with simple JWT-like token management and role-based access control.
 """
 import hashlib
 import secrets
-import json
-import base64
 from datetime import datetime, timedelta
+from typing import Optional, List
+from fastapi import Header, HTTPException, Depends
 
 # In-memory token store for the prototype
 _tokens = {}
@@ -35,7 +35,7 @@ def create_token(user_id: str, username: str, role: str) -> str:
     return token
 
 
-def validate_token(token: str) -> dict:
+def validate_token(token: str) -> Optional[dict]:
     """Validate a token and return user info, or None."""
     if not token:
         return None
@@ -53,6 +53,32 @@ def validate_token(token: str) -> dict:
     return info
 
 
-def get_current_user(token: str) -> dict:
-    """Get user info from token."""
-    return validate_token(token)
+def get_current_user_info(authorization: Optional[str] = Header(None)) -> Optional[dict]:
+    """Dependency to extract user info from Authorization header."""
+    if not authorization:
+        return None
+    return validate_token(authorization)
+
+
+def require_auth(authorization: Optional[str] = Header(None)) -> dict:
+    """Dependency that mandates authentication."""
+    user = get_current_user_info(authorization)
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    return user
+
+
+def require_role(allowed_roles: List[str]):
+    """Factory creating dependency enforcing specific user roles."""
+    def role_checker(authorization: Optional[str] = Header(None)) -> dict:
+        user = get_current_user_info(authorization)
+        if not user:
+            raise HTTPException(status_code=401, detail="Authentication required.")
+        user_role = user.get("role")
+        if user_role not in allowed_roles:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Access forbidden: requires one of roles {allowed_roles}, but got '{user_role}'."
+            )
+        return user
+    return role_checker

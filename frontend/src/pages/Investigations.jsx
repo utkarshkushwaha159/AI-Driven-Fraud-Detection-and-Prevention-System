@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getInvestigations, updateInvestigation, addInvestigationNote } from '../services/api';
+import { getInvestigations, updateInvestigation, addInvestigationNote, adminApprovePayment, adminRejectPayment } from '../services/api';
 import { StatusBadge, LoadingState, EmptyState } from '../components/SharedComponents';
 
-export default function Investigations() {
+export default function Investigations({ user }) {
   const [data, setData] = useState({ investigations: [], total: 0 });
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
@@ -11,6 +11,7 @@ export default function Investigations() {
   const [selected, setSelected] = useState(null);
   const [newNote, setNewNote] = useState('');
   const [newStatus, setNewStatus] = useState('');
+  const [actionMsg, setActionMsg] = useState(null);
   const navigate = useNavigate();
   const pageSize = 20;
 
@@ -25,6 +26,30 @@ export default function Investigations() {
       setData(res.data);
     } catch { }
     setLoading(false);
+  };
+
+  const handleAdminApprove = async () => {
+    if (!selected?.transaction_id) return;
+    try {
+      const res = await adminApprovePayment(selected.transaction_id);
+      setActionMsg('✓ Payment approved and released by Administrator.');
+      await updateInvestigation(selected.id, { status: 'resolved' });
+      load();
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Failed to approve payment.');
+    }
+  };
+
+  const handleAdminReject = async () => {
+    if (!selected?.transaction_id) return;
+    try {
+      const res = await adminRejectPayment(selected.transaction_id);
+      setActionMsg('✓ Payment rejected and permanently blocked by Administrator.');
+      await updateInvestigation(selected.id, { status: 'closed' });
+      load();
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Failed to reject payment.');
+    }
   };
 
   const handleUpdateStatus = async (invId, status) => {
@@ -65,6 +90,7 @@ export default function Investigations() {
                 <option value="all">All Status</option>
                 <option value="open">Open</option>
                 <option value="under_review">Under Review</option>
+                <option value="ready_for_admin_review">Ready for Admin Review</option>
                 <option value="escalated">Escalated</option>
                 <option value="resolved">Resolved</option>
                 <option value="false_positive">False Positive</option>
@@ -77,7 +103,7 @@ export default function Investigations() {
               <div>
                 {data.investigations.map((inv) => (
                   <div key={inv.id}
-                    onClick={() => { setSelected(inv); setNewStatus(inv.status); }}
+                    onClick={() => { setSelected(inv); setNewStatus(inv.status); setActionMsg(null); }}
                     style={{
                       padding: '12px 16px', borderBottom: '1px solid #f0f1f3',
                       cursor: 'pointer', background: selected?.id === inv.id ? '#f8f9fb' : 'transparent',
@@ -117,6 +143,12 @@ export default function Investigations() {
                 <p style={{ fontSize: 13, color: '#6b7280', marginTop: 12 }}>{selected.description}</p>
               )}
 
+              {actionMsg && (
+                <div style={{ marginTop: 12, padding: 10, background: 'var(--color-success-bg)', color: 'var(--color-success)', borderRadius: 4, fontSize: 13, fontWeight: 500 }}>
+                  {actionMsg}
+                </div>
+              )}
+
               <div style={{ marginTop: 16 }}>
                 <div className="form-group">
                   <label className="form-label">Update Status</label>
@@ -125,6 +157,7 @@ export default function Investigations() {
                       value={newStatus} onChange={(e) => setNewStatus(e.target.value)}>
                       <option value="open">Open</option>
                       <option value="under_review">Under Review</option>
+                      <option value="ready_for_admin_review">Ready for Admin Review</option>
                       <option value="escalated">Escalated</option>
                       <option value="resolved">Resolved</option>
                       <option value="false_positive">False Positive</option>
@@ -135,7 +168,43 @@ export default function Investigations() {
                 </div>
               </div>
 
-              <div className="flex gap-2" style={{ marginTop: 8 }}>
+              {user?.role === 'analyst' && selected.status !== 'ready_for_admin_review' && selected.status !== 'resolved' && (
+                <div style={{ marginTop: 8 }}>
+                  <button
+                    className="btn btn-sm btn-secondary"
+                    style={{ width: '100%', borderColor: 'var(--color-primary)', color: 'var(--color-primary)' }}
+                    onClick={() => handleUpdateStatus(selected.id, 'ready_for_admin_review')}
+                  >
+                    ✓ Mark Ready for Admin Review
+                  </button>
+                </div>
+              )}
+
+              {user?.role === 'admin' && (
+                <div style={{ marginTop: 16, padding: 14, borderRadius: 6, background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                  <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8, color: 'var(--color-navy)' }}>
+                    🛡️ Admin Final Decision
+                  </div>
+                  <div style={{ display: 'flex', gap: 10 }}>
+                    <button
+                      className="btn btn-sm"
+                      style={{ background: '#10b981', color: '#fff', border: 'none', flex: 1, padding: '8px 12px', fontWeight: 600 }}
+                      onClick={handleAdminApprove}
+                    >
+                      Approve Payment
+                    </button>
+                    <button
+                      className="btn btn-sm btn-danger"
+                      style={{ flex: 1, padding: '8px 12px', fontWeight: 600 }}
+                      onClick={handleAdminReject}
+                    >
+                      Reject & Block
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex gap-2" style={{ marginTop: 12 }}>
                 <button className="btn btn-sm btn-secondary"
                   onClick={() => navigate(`/transactions/${selected.transaction_id}`)}>
                   View Transaction
